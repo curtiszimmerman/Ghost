@@ -1,23 +1,26 @@
 import Ember from 'ember';
-import Configuration from 'simple-auth/configuration';
 import styleBody from 'ghost/mixins/style-body';
-import loadingIndicator from 'ghost/mixins/loading-indicator';
+import Configuration from 'ember-simple-auth/configuration';
+import DS from 'ember-data';
 
-var SigninRoute = Ember.Route.extend(styleBody, loadingIndicator, {
+export default Ember.Route.extend(styleBody, {
     titleToken: 'Sign In',
 
     classNames: ['ghost-login'],
 
+    session: Ember.inject.service(),
+
     beforeModel: function () {
-        if (this.get('session').isAuthenticated) {
-            this.transitionTo(Configuration.routeAfterAuthentication);
+        if (this.get('session.isAuthenticated')) {
+            this.transitionTo(Configuration.routeIfAlreadyAuthenticated);
         }
     },
 
     model: function () {
         return Ember.Object.create({
             identification: '',
-            password: ''
+            password: '',
+            errors: DS.Errors.create()
         });
     },
 
@@ -32,5 +35,3 @@ var SigninRoute = Ember.Route.extend(styleBody, loadingIndicator, {
         controller.set('model.password', '');
     }
 });
-
-export default SigninRoute;

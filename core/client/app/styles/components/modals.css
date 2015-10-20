@@ -105,6 +105,11 @@
     padding: 0;
     width: 16px;
     border: none;
+    color: #808284;
+}
+
+.modal-content .close:hover {
+    color: var(--darkgrey);
 }
 
 .modal-header {
@@ -137,12 +142,18 @@
 }
 
 .modal-footer {
+    display: flex;
+    justify-content: flex-end;
     margin-top: 20px;
-    text-align: right;
 }
 
 .modal-footer button {
     margin-left: 8px;
+    text-align: center;
+}
+
+.modal-footer button:first-of-type {
+    margin-left: 0;
 }
 
 

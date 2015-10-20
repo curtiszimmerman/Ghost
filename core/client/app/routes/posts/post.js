@@ -1,10 +1,9 @@
 import AuthenticatedRoute from 'ghost/routes/authenticated';
-import loadingIndicator from 'ghost/mixins/loading-indicator';
 import ShortcutsRoute from 'ghost/mixins/shortcuts-route';
 import isNumber from 'ghost/utils/isNumber';
 import isFinite from 'ghost/utils/isFinite';
 
-var PostsPostRoute = AuthenticatedRoute.extend(loadingIndicator, ShortcutsRoute, {
+export default AuthenticatedRoute.extend(ShortcutsRoute, {
     model: function (params) {
         var self = this,
             post,
@@ -17,7 +16,7 @@ var PostsPostRoute = AuthenticatedRoute.extend(loadingIndicator, ShortcutsRoute,
             return this.transitionTo('error404', params.post_id);
         }
 
-        post = this.store.getById('post', postId);
+        post = this.store.peekRecord('post', postId);
         if (post) {
             return post;
         }
@@ -28,9 +27,7 @@ var PostsPostRoute = AuthenticatedRoute.extend(loadingIndicator, ShortcutsRoute,
             staticPages: 'all'
         };
 
-        return self.store.find('post', query).then(function (records) {
-            var post = records.get('firstObject');
-
+        return self.store.queryRecord('post', query).then(function (post) {
             if (post) {
                 return post;
             }
@@ -61,8 +58,14 @@ var PostsPostRoute = AuthenticatedRoute.extend(loadingIndicator, ShortcutsRoute,
     },
 
     actions: {
-        openEditor: function () {
-            this.transitionTo('editor.edit', this.get('controller.model'));
+        openEditor: function (post) {
+            post = post || this.get('controller.model');
+
+            if (!post) {
+                return;
+            }
+
+            this.transitionTo('editor.edit', post.get('id'));
         },
 
         deletePost: function () {
@@ -70,5 +73,3 @@ var PostsPostRoute = AuthenticatedRoute.extend(loadingIndicator, ShortcutsRoute,
         }
     }
 });
-
-export default PostsPostRoute;

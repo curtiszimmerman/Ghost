@@ -26,7 +26,7 @@ describe('Error handling', function () {
                     errors.throwError(toThrow);
                 };
 
-            runThrowError.should['throw']('test1');
+            runThrowError.should.throw('test1');
         });
 
         it('throws error strings', function () {
@@ -35,7 +35,7 @@ describe('Error handling', function () {
                     errors.throwError(toThrow);
                 };
 
-            runThrowError.should['throw']('test2');
+            runThrowError.should.throw('test2');
         });
 
         it('throws error even if nothing passed', function () {
@@ -43,7 +43,7 @@ describe('Error handling', function () {
                 errors.throwError();
             };
 
-            runThrowError.should['throw']('An error occurred');
+            runThrowError.should.throw('An error occurred');
         });
     });
 
@@ -319,7 +319,7 @@ describe('Error handling', function () {
                 view.should.match(/user-error\.hbs/);
 
                 // Test that the message is correct
-                options.message.should.equal('Page Not Found');
+                options.message.should.equal('Page not found');
                 options.code.should.equal(404);
                 this.statusCode.should.equal(404);
 
@@ -350,7 +350,7 @@ describe('Error handling', function () {
                 view.should.match(/user-error\.hbs/);
 
                 // Test that the message is correct
-                options.message.should.equal('Page Not Found');
+                options.message.should.equal('Page not found');
                 options.code.should.equal(404);
                 this.statusCode.should.equal(404);
 

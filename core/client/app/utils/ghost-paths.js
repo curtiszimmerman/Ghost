@@ -17,7 +17,7 @@ var makeRoute = function (root, args) {
     return route += '/';
 };
 
-function ghostPaths() {
+export default function () {
     var path = window.location.pathname,
         subdir = path.substr(0, path.search('/ghost/')),
         adminRoot = subdir + '/ghost',
@@ -53,8 +53,7 @@ function ghostPaths() {
             },
 
             asset: assetUrl
-        }
+        },
+        count: 'https://ghost.org/count/'
     };
 }
-
-export default ghostPaths;

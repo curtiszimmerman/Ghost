@@ -19,10 +19,7 @@ describe('DB API', function () {
         }).then(function (token) {
             accesstoken = token;
             done();
-        }).catch(function (e) {
-            console.log('Ghost Error: ', e);
-            console.log(e.stack);
-        });
+        }).catch(done);
     });
 
     after(function (done) {
@@ -35,7 +32,7 @@ describe('DB API', function () {
         request.get(testUtils.API.getApiQuery('db/'))
             .set('Authorization', 'Bearer ' + accesstoken)
             .expect('Content-Type', /json/)
-            .expect('Cache-Control', testUtils.cacheRules['private'])
+            .expect('Cache-Control', testUtils.cacheRules.private)
             .expect(200)
             .expect('Content-Disposition', /Attachment; filename="[A-Za-z0-9._-]+\.json"/)
             .end(function (err, res) {

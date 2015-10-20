@@ -1,8 +1,7 @@
 import DS from 'ember-data';
 import ValidationEngine from 'ghost/mixins/validation-engine';
-import NProgressSaveMixin from 'ghost/mixins/nprogress-save';
 
-var Tag = DS.Model.extend(NProgressSaveMixin, ValidationEngine, {
+export default DS.Model.extend(ValidationEngine, {
     validationType: 'tag',
 
     uuid: DS.attr('string'),
@@ -20,5 +19,3 @@ var Tag = DS.Model.extend(NProgressSaveMixin, ValidationEngine, {
     updated_by: DS.attr(),
     post_count: DS.attr('number')
 });
-
-export default Tag;

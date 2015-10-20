@@ -2,55 +2,40 @@ import AuthenticatedRoute from 'ghost/routes/authenticated';
 import CurrentUserSettings from 'ghost/mixins/current-user-settings';
 import PaginationRouteMixin from 'ghost/mixins/pagination-route';
 
-var TagsRoute,
-    paginationSettings;
+export default AuthenticatedRoute.extend(CurrentUserSettings, PaginationRouteMixin, {
+    titleToken: 'Settings - Tags',
 
-paginationSettings = {
-    page: 1,
-    include: 'post_count',
-    limit: 15
-};
-
-TagsRoute = AuthenticatedRoute.extend(CurrentUserSettings, PaginationRouteMixin, {
-    actions: {
-        willTransition: function () {
-            this.send('closeSettingsMenu');
-        }
+    paginationModel: 'tag',
+    paginationSettings: {
+        include: 'post_count',
+        limit: 15
     },
 
-    titleToken: 'Tags',
-
     beforeModel: function () {
+        this._super(...arguments);
+
         return this.get('session.user')
             .then(this.transitionAuthor());
     },
 
     model: function () {
         this.store.unloadAll('tag');
+        this.loadFirstPage();
 
-        return this.store.filter('tag', paginationSettings, function (tag) {
+        return this.store.filter('tag', function (tag) {
             return !tag.get('isNew');
         });
     },
 
-    setupController: function (controller, model) {
-        this._super(controller, model);
-        this.setupPagination(paginationSettings);
-    },
-
     renderTemplate: function (controller, model) {
         this._super(controller, model);
-        this.render('settings/tags', {into: 'application'});
         this.render('settings/tags/settings-menu', {
             into: 'application',
-            outlet: 'settings-menu',
-            view: 'settings/tags/settings-menu'
+            outlet: 'settings-menu'
         });
     },
 
     deactivate: function () {
-        this.controller.send('resetPagination');
+        this.send('resetPagination');
     }
 });
-
-export default TagsRoute;

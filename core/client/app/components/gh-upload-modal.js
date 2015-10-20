@@ -3,8 +3,10 @@ import ModalDialog from 'ghost/components/gh-modal-dialog';
 import upload from 'ghost/assets/lib/uploader';
 import cajaSanitizers from 'ghost/utils/caja-sanitizers';
 
-var UploadModal = ModalDialog.extend({
+export default ModalDialog.extend({
     layoutName: 'components/gh-modal-dialog',
+
+    config: Ember.inject.service(),
 
     didInsertElement: function () {
         this._super();
@@ -71,5 +73,3 @@ var UploadModal = ModalDialog.extend({
         }
     }
 });
-
-export default UploadModal;

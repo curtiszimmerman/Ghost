@@ -1,52 +1,43 @@
 import Ember from 'ember';
 import AuthenticatedRoute from 'ghost/routes/authenticated';
-import styleBody from 'ghost/mixins/style-body';
 import ShortcutsRoute from 'ghost/mixins/shortcuts-route';
-import loadingIndicator from 'ghost/mixins/loading-indicator';
 import PaginationRouteMixin from 'ghost/mixins/pagination-route';
 
-var paginationSettings,
-    PostsRoute;
-
-paginationSettings = {
-    status: 'all',
-    staticPages: 'all',
-    page: 1
-};
-
-PostsRoute = AuthenticatedRoute.extend(ShortcutsRoute, styleBody, loadingIndicator, PaginationRouteMixin, {
+export default AuthenticatedRoute.extend(ShortcutsRoute, PaginationRouteMixin, {
     titleToken: 'Content',
 
-    classNames: ['manage'],
+    paginationModel: 'post',
+    paginationSettings: {
+        status: 'all',
+        staticPages: 'all'
+    },
 
     model: function () {
-        var self = this;
+        var paginationSettings = this.get('paginationSettings'),
+            self = this;
 
         return this.get('session.user').then(function (user) {
             if (user.get('isAuthor')) {
                 paginationSettings.author = user.get('slug');
             }
 
-            // using `.filter` allows the template to auto-update when new models are pulled in from the server.
-            // we just need to 'return true' to allow all models by default.
-            return self.store.filter('post', paginationSettings, function (post) {
-                if (user.get('isAuthor')) {
-                    return post.isAuthoredByUser(user);
-                }
+            return self.loadFirstPage().then(function () {
+                // using `.filter` allows the template to auto-update when new models are pulled in from the server.
+                // we just need to 'return true' to allow all models by default.
+                return self.store.filter('post', function (post) {
+                    if (user.get('isAuthor')) {
+                        return post.isAuthoredByUser(user);
+                    }
 
-                return true;
+                    return true;
+                });
             });
         });
     },
 
-    setupController: function (controller, model) {
-        this._super(controller, model);
-        this.setupPagination(paginationSettings);
-    },
-
     stepThroughPosts: function (step) {
         var currentPost = this.get('controller.currentPost'),
-            posts = this.get('controller.arrangedContent'),
+            posts = this.get('controller.sortedPosts'),
             length = posts.get('length'),
             newPosition;
 
@@ -107,5 +98,3 @@ PostsRoute = AuthenticatedRoute.extend(ShortcutsRoute, styleBody, loadingIndicat
         }
     }
 });
-
-export default PostsRoute;

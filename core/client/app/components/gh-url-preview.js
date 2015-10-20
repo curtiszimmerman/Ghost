@@ -3,14 +3,16 @@ import Ember from 'ember';
 Example usage:
 {{gh-url-preview prefix="tag" slug=theSlugValue tagName="p" classNames="description"}}
 */
-var urlPreview = Ember.Component.extend({
+export default Ember.Component.extend({
     classNames: 'ghost-url-preview',
     prefix: null,
     slug: null,
 
+    config: Ember.inject.service(),
+
     url: Ember.computed('slug', function () {
         // Get the blog URL and strip the scheme
-        var blogUrl = this.get('config').blogUrl,
+        var blogUrl = this.get('config.blogUrl'),
             noSchemeBlogUrl = blogUrl.substr(blogUrl.indexOf('://') + 3), // Remove `http[s]://`
 
             // Get the prefix and slug values
@@ -23,5 +25,3 @@ var urlPreview = Ember.Component.extend({
         return theUrl;
     })
 });
-
-export default urlPreview;
