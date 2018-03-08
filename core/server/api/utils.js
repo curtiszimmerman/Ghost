@@ -1,12 +1,10 @@
 // # API Utils
 // Shared helpers for working with the API
 var Promise = require('bluebird'),
-    _       = require('lodash'),
-    path    = require('path'),
-    errors  = require('../errors'),
-    permissions = require('../permissions'),
-    validation  = require('../data/validation'),
-
+    _ = require('lodash'),
+    permissions = require('../services/permissions'),
+    validation = require('../data/validation'),
+    common = require('../lib/common'),
     utils;
 
 utils = {
@@ -23,7 +21,7 @@ utils = {
     // ### Manual Default Options
     // These must be provided by the endpoint
     // browseDefaultOptions - valid for all browse api endpoints
-    browseDefaultOptions: ['page', 'limit', 'fields'],
+    browseDefaultOptions: ['page', 'limit', 'fields', 'filter', 'order', 'debug'],
     // idDefaultOptions - valid whenever an id is valid
     idDefaultOptions: ['id'],
 
@@ -42,6 +40,7 @@ utils = {
          */
         return function doValidate() {
             var object, options, permittedOptions;
+
             if (arguments.length === 2) {
                 object = arguments[0];
                 options = _.clone(arguments[1]) || {};
@@ -89,7 +88,7 @@ utils = {
                 }
 
                 // For now, we can only handle showing the first validation error
-                return errors.logAndRejectError(validationErrors[0]);
+                return Promise.reject(validationErrors[0]);
             }
 
             // If we got an object, check that too
@@ -108,16 +107,20 @@ utils = {
 
     validateOptions: function validateOptions(options) {
         var globalValidations = {
-                id: {matches: /^\d+|me$/},
+                id: {matches: /^[a-f\d]{24}$|^1$|me/i},
                 uuid: {isUUID: true},
                 slug: {isSlug: true},
                 page: {matches: /^\d+$/},
                 limit: {matches: /^\d+|all$/},
-                fields: {matches: /^[a-z0-9_,]+$/},
-                name: {}
+                from: {isDate: true},
+                to: {isDate: true},
+                fields: {matches: /^[\w, ]+$/},
+                order: {matches: /^[a-z0-9_,\. ]+$/i},
+                name: {},
+                email: {isEmail: true}
             },
             // these values are sanitised/validated separately
-            noValidation = ['data', 'context', 'include'],
+            noValidation = ['data', 'context', 'include', 'filter', 'forUpdate', 'transacting', 'formats'],
             errors = [];
 
         _.each(options, function (value, key) {
@@ -136,13 +139,14 @@ utils = {
     },
 
     /**
-     * ## Is Public Context?
-     * If this is a public context, return true
+     * ## Detect Public Context
+     * Calls parse context to expand the options.context object
      * @param {Object} options
      * @returns {Boolean}
      */
-    isPublicContext: function isPublicContext(options) {
-        return permissions.parseContext(options.context).public;
+    detectPublicContext: function detectPublicContext(options) {
+        options.context = permissions.parseContext(options.context);
+        return options.context.public;
     },
     /**
      * ## Apply Public Permissions
@@ -173,7 +177,7 @@ utils = {
         return function doHandlePublicPermissions(options) {
             var permsPromise;
 
-            if (utils.isPublicContext(options)) {
+            if (utils.detectPublicContext(options)) {
                 permsPromise = utils.applyPublicPermissions(docName, method, options);
             } else {
                 permsPromise = permissions.canThis(options.context)[method][singular](options.data);
@@ -181,8 +185,6 @@ utils = {
 
             return permsPromise.then(function permissionGranted() {
                 return options;
-            }).catch(function handleError(error) {
-                return errors.handleAPIError(error);
             });
         };
     },
@@ -191,9 +193,10 @@ utils = {
      * ## Handle Permissions
      * @param {String} docName
      * @param {String} method (browse || read || edit || add || destroy)
+     * * @param {Array} unsafeAttrNames - attribute names (e.g. post.status) that could change the outcome
      * @returns {Function}
      */
-    handlePermissions: function handlePermissions(docName, method) {
+    handlePermissions: function handlePermissions(docName, method, unsafeAttrNames) {
         var singular = docName.replace(/s$/, '');
 
         /**
@@ -203,35 +206,66 @@ utils = {
          * @returns {Object} options
          */
         return function doHandlePermissions(options) {
-            var permsPromise = permissions.canThis(options.context)[method][singular](options.id);
+            var unsafeAttrObject = unsafeAttrNames && _.has(options, 'data.[' + docName + '][0]') ? _.pick(options.data[docName][0], unsafeAttrNames) : {},
+                permsPromise = permissions.canThis(options.context)[method][singular](options.id, unsafeAttrObject);
 
-            return permsPromise.then(function permissionGranted() {
+            return permsPromise.then(function permissionGranted(result) {
+                /*
+                 * Allow the permissions function to return a list of excluded attributes.
+                 * If it does, omit those attrs from the data passed through
+                 *
+                 * NOTE: excludedAttrs differ from unsafeAttrs in that they're determined by the model's permissible function,
+                 * and the attributes are simply excluded rather than throwing a NoPermission exception
+                 *
+                 * TODO: This is currently only needed because of the posts model and the contributor role. Once we extend the
+                 * contributor role to be able to edit existing tags, this concept can be removed.
+                 */
+                if (result && result.excludedAttrs && _.has(options, 'data.[' + docName + '][0]')) {
+                    options.data[docName][0] = _.omit(options.data[docName][0], result.excludedAttrs);
+                }
+
                 return options;
-            }).catch(errors.NoPermissionError, function handleNoPermissionError(error) {
-                // pimp error message
-                error.message = 'You do not have permission to ' + method + ' ' + docName;
-                // forward error to next catch()
-                return Promise.reject(error);
-            }).catch(function handleError(error) {
-                return errors.handleAPIError(error);
+            }).catch(function handleNoPermissionError(err) {
+                if (err instanceof common.errors.NoPermissionError) {
+                    err.message = common.i18n.t('errors.api.utils.noPermissionToCall', {
+                        method: method,
+                        docName: docName
+                    });
+                    return Promise.reject(err);
+                }
+
+                if (common.errors.utils.isIgnitionError(err)) {
+                    return Promise.reject(err);
+                }
+
+                return Promise.reject(new common.errors.GhostError({
+                    err: err
+                }));
             });
         };
     },
 
-    prepareInclude: function prepareInclude(include, allowedIncludes) {
-        include = include || '';
-        include = _.intersection(include.split(','), allowedIncludes);
+    trimAndLowerCase: function trimAndLowerCase(params) {
+        params = params || '';
+        if (_.isString(params)) {
+            params = params.split(',');
+        }
 
-        return include;
+        return _.map(params, function (item) {
+            return item.trim().toLowerCase();
+        });
+    },
+
+    prepareInclude: function prepareInclude(include, allowedIncludes) {
+        return _.intersection(this.trimAndLowerCase(include), allowedIncludes);
     },
 
     prepareFields: function prepareFields(fields) {
-        fields = fields || '';
-        if (_.isString(fields)) {
-            fields = fields.split(',');
-        }
+        return this.trimAndLowerCase(fields);
+    },
 
-        return fields;
+    prepareFormats: function prepareFormats(formats, allowedFormats) {
+        return _.intersection(this.trimAndLowerCase(formats), allowedFormats);
     },
 
     /**
@@ -239,7 +273,7 @@ utils = {
      * @param {Array} allowedIncludes
      * @returns {Function} doConversion
      */
-    convertOptions: function convertOptions(allowedIncludes) {
+    convertOptions: function convertOptions(allowedIncludes, allowedFormats) {
         /**
          * Convert our options from API-style to Model-style
          * @param {Object} options
@@ -247,12 +281,23 @@ utils = {
          */
         return function doConversion(options) {
             if (options.include) {
-                options.include = utils.prepareInclude(options.include, allowedIncludes);
+                options.withRelated = utils.prepareInclude(options.include, allowedIncludes);
+                delete options.include;
             }
+
             if (options.fields) {
                 options.columns = utils.prepareFields(options.fields);
                 delete options.fields;
             }
+
+            if (options.formats) {
+                options.formats = utils.prepareFormats(options.formats, allowedFormats);
+            }
+
+            if (options.formats && options.columns) {
+                options.columns = options.columns.concat(options.formats);
+            }
+
             return options;
         };
     },
@@ -264,9 +309,11 @@ utils = {
      * @param {String} docName
      * @returns {Promise(Object)} resolves to the original object if it checks out
      */
-    checkObject: function (object, docName, editId) {
+    checkObject: function checkObject(object, docName, editId) {
         if (_.isEmpty(object) || _.isEmpty(object[docName]) || _.isEmpty(object[docName][0])) {
-            return errors.logAndRejectError(new errors.BadRequestError('No root key (\'' + docName + '\') provided.'));
+            return Promise.reject(new common.errors.BadRequestError({
+                message: common.i18n.t('errors.api.utils.noRootKeyProvided', {docName: docName})
+            }));
         }
 
         // convert author property to author_id to match the name in the database
@@ -277,23 +324,22 @@ utils = {
             }
         }
 
-        if (editId && object[docName][0].id && parseInt(editId, 10) !== parseInt(object[docName][0].id, 10)) {
-            return errors.logAndRejectError(new errors.BadRequestError('Invalid id provided.'));
+        // will remove unwanted null values
+        _.each(object[docName], function (value, index) {
+            if (!_.isObject(object[docName][index])) {
+                return;
+            }
+
+            object[docName][index] = _.omitBy(object[docName][index], _.isNull);
+        });
+
+        if (editId && object[docName][0].id && editId !== object[docName][0].id) {
+            return Promise.reject(new common.errors.BadRequestError({
+                message: common.i18n.t('errors.api.utils.invalidIdProvided')
+            }));
         }
 
         return Promise.resolve(object);
-    },
-    checkFileExists: function (options, filename) {
-        return !!(options[filename] && options[filename].type && options[filename].path);
-    },
-    checkFileIsValid: function (file, types, extensions) {
-        var type = file.type,
-            ext = path.extname(file.name).toLowerCase();
-
-        if (_.contains(types, type) && _.contains(extensions, ext)) {
-            return true;
-        }
-        return false;
     }
 };
 

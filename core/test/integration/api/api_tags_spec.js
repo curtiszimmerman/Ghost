@@ -1,13 +1,18 @@
-/*globals describe, before, beforeEach, afterEach, it */
-/*jshint expr:true*/
-var testUtils   = require('../../utils'),
-    should      = require('should'),
-    Promise     = require('bluebird'),
-    _           = require('lodash'),
+var should = require('should'),
+    testUtils = require('../../utils'),
+    _ = require('lodash'),
     // Stuff we are testing
-    context     = testUtils.context,
+    context = testUtils.context,
 
-    TagAPI      = require('../../../server/api/tags');
+    TagAPI = require('../../../server/api/tags');
+
+// there are some random generated tags in test database
+// which can't be sorted easily using _.sortBy()
+// so we filter them out and leave only pre-built fixtures
+// usage: tags.filter(onlyFixtures)
+function onlyFixtures(slug) {
+    return testUtils.DataGenerator.Content.tags.indexOf(slug) >= 0;
+}
 
 describe('Tags API', function () {
     // Keep the DB clean
@@ -21,8 +26,7 @@ describe('Tags API', function () {
         var newTag;
 
         beforeEach(function () {
-            newTag = _.clone(testUtils.DataGenerator.forKnex.createTag(testUtils.DataGenerator.Content.tags[0]));
-            Promise.resolve(newTag);
+            newTag = _.clone(_.omit(testUtils.DataGenerator.forKnex.createTag(testUtils.DataGenerator.Content.tags[0]), 'id'));
         });
 
         it('can add a tag (admin)', function (done) {
@@ -41,8 +45,43 @@ describe('Tags API', function () {
                     should.exist(results);
                     should.exist(results.tags);
                     results.tags.length.should.be.above(0);
+                    results.tags[0].visibility.should.eql('public');
                     done();
                 }).catch(done);
+        });
+
+        it('can add a tag (author)', function (done) {
+            TagAPI.add({tags: [newTag]}, testUtils.context.author)
+            .then(function (results) {
+                should.exist(results);
+                should.exist(results.tags);
+                results.tags.length.should.be.above(0);
+                results.tags[0].visibility.should.eql('public');
+                done();
+            }).catch(done);
+        });
+
+        it('add internal tag', function (done) {
+            TagAPI
+                .add({tags: [{name: '#test'}]}, testUtils.context.editor)
+                .then(function (results) {
+                    should.exist(results);
+                    should.exist(results.tags);
+                    results.tags.length.should.be.above(0);
+                    results.tags[0].visibility.should.eql('internal');
+                    results.tags[0].name.should.eql('#test');
+                    results.tags[0].slug.should.eql('hash-test');
+                    done();
+                }).catch(done);
+        });
+
+        it('CANNOT add tag (contributor)', function (done) {
+            TagAPI.add({tags: [newTag]}, testUtils.context.contributor)
+            .then(function () {
+                done(new Error('Add tag is not denied for contributor.'));
+            }, function () {
+                done();
+            }).catch(done);
         });
 
         it('No-auth CANNOT add tag', function (done) {
@@ -62,15 +101,15 @@ describe('Tags API', function () {
                 .then(function () {
                     done(new Error('Adding a tag with an invalid name is not rejected.'));
                 }).catch(function (errors) {
-                    errors.should.have.enumerable(0).with.property('errorType', 'ValidationError');
-                    done();
-                }).catch(done);
+                errors[0].errorType.should.eql('ValidationError');
+                done();
+            }).catch(done);
         });
     });
 
     describe('Edit', function () {
         var newTagName = 'tagNameUpdated',
-        firstTag = 1;
+            firstTag = testUtils.DataGenerator.Content.tags[0].id;
 
         it('can edit a tag (admin)', function (done) {
             TagAPI.edit({tags: [{name: newTagName}]}, _.extend({}, context.admin, {id: firstTag}))
@@ -92,13 +131,22 @@ describe('Tags API', function () {
                 }).catch(done);
         });
 
-        it('No-auth CANNOT edit tag', function (done) {
-            TagAPI.edit({tags: [{name: newTagName}]}, _.extend({}, {id: firstTag}))
+        it('CANNOT edit a tag (author)', function (done) {
+            TagAPI.edit({tags: [{name: newTagName}]}, _.extend({}, context.author, {id: firstTag}))
             .then(function () {
-                done(new Error('Add tag is not denied without authentication.'));
+                done(new Error('Add tag is not denied for author.'));
             }, function () {
                 done();
             }).catch(done);
+        });
+
+        it('No-auth CANNOT edit tag', function (done) {
+            TagAPI.edit({tags: [{name: newTagName}]}, _.extend({}, {id: firstTag}))
+                .then(function () {
+                    done(new Error('Add tag is not denied without authentication.'));
+                }, function () {
+                    done();
+                }).catch(done);
         });
 
         it('rejects invalid names with ValidationError', function (done) {
@@ -108,20 +156,20 @@ describe('Tags API', function () {
                 .then(function () {
                     done(new Error('Adding a tag with an invalid name is not rejected.'));
                 }).catch(function (errors) {
-                    errors.should.have.enumerable(0).with.property('errorType', 'ValidationError');
-                    done();
-                }).catch(done);
+                errors[0].errorType.should.eql('ValidationError');
+                done();
+            }).catch(done);
         });
     });
 
     describe('Destroy', function () {
-        var firstTag = 1;
+        var firstTag = testUtils.DataGenerator.Content.tags[0].id;
+
         it('can destroy Tag', function (done) {
             TagAPI.destroy(_.extend({}, testUtils.context.admin, {id: firstTag}))
                 .then(function (results) {
-                    should.exist(results);
-                    should.exist(results.tags);
-                    results.tags.length.should.be.above(0);
+                    should.not.exist(results);
+
                     done();
                 }).catch(done);
         });
@@ -129,7 +177,7 @@ describe('Tags API', function () {
 
     describe('Browse', function () {
         beforeEach(function (done) {
-            testUtils.fixtures.insertMoreTags().then(function () {
+            testUtils.fixtures.insertExtraTags().then(function () {
                 done();
             });
         });
@@ -220,16 +268,16 @@ describe('Tags API', function () {
             }).catch(done);
         });
 
-        it('can browse with include post_count', function (done) {
-            TagAPI.browse({context: {user: 1}, include: 'post_count'}).then(function (results) {
+        it('can browse with include count.posts', function (done) {
+            TagAPI.browse({context: {user: 1}, include: 'count.posts'}).then(function (results) {
                 should.exist(results);
                 should.exist(results.tags);
                 results.tags.should.have.lengthOf(15);
-                testUtils.API.checkResponse(results.tags[0], 'tag', 'post_count');
-                should.exist(results.tags[0].post_count);
+                testUtils.API.checkResponse(results.tags[0], 'tag', 'count');
+                should.exist(results.tags[0].count.posts);
 
-                results.tags[0].post_count.should.eql(2);
-                results.tags[1].post_count.should.eql(2);
+                results.tags[0].count.posts.should.eql(2);
+                results.tags[1].count.posts.should.eql(2);
                 results.meta.pagination.should.have.property('page', 1);
                 results.meta.pagination.should.have.property('limit', 15);
                 results.meta.pagination.should.have.property('pages', 4);
@@ -241,13 +289,13 @@ describe('Tags API', function () {
             }).catch(done);
         });
 
-        it('can browse page 4 with include post_count', function (done) {
-            TagAPI.browse({context: {user: 1}, include: 'post_count', page: 4}).then(function (results) {
+        it('can browse page 4 with include count.posts', function (done) {
+            TagAPI.browse({context: {user: 1}, include: 'count.posts', page: 4}).then(function (results) {
                 should.exist(results);
                 should.exist(results.tags);
                 results.tags.should.have.lengthOf(10);
-                testUtils.API.checkResponse(results.tags[0], 'tag', 'post_count');
-                should.exist(results.tags[0].post_count);
+                testUtils.API.checkResponse(results.tags[0], 'tag', 'count');
+                should.exist(results.tags[0].count.posts);
 
                 results.meta.pagination.should.have.property('page', 4);
                 results.meta.pagination.should.have.property('limit', 15);
@@ -259,22 +307,64 @@ describe('Tags API', function () {
                 done();
             }).catch(done);
         });
+
+        it('can browse and order by slug using asc', function (done) {
+            var expectedTags;
+
+            TagAPI.browse({context: {user: 1}})
+                .then(function (results) {
+                    should.exist(results);
+
+                    expectedTags = _(results.tags).map('slug').filter(onlyFixtures).sortBy().value();
+
+                    return TagAPI.browse({context: {user: 1}, order: 'slug asc'});
+                })
+                .then(function (results) {
+                    var tags;
+
+                    should.exist(results);
+
+                    tags = _(results.tags).map('slug').filter(onlyFixtures).value();
+                    tags.should.eql(expectedTags);
+                })
+                .then(done)
+                .catch(done);
+        });
+
+        it('can browse and order by slug using desc', function (done) {
+            var expectedTags;
+
+            TagAPI.browse({context: {user: 1}})
+                .then(function (results) {
+                    should.exist(results);
+
+                    expectedTags = _(results.tags).map('slug').filter(onlyFixtures).sortBy().reverse().value();
+
+                    return TagAPI.browse({context: {user: 1}, order: 'slug desc'});
+                })
+                .then(function (results) {
+                    var tags;
+
+                    should.exist(results);
+
+                    tags = _(results.tags).map('slug').filter(onlyFixtures).value();
+                    tags.should.eql(expectedTags);
+                })
+                .then(done)
+                .catch(done);
+        });
     });
 
     describe('Read', function () {
-        function extractFirstTag(tags) {
-            return _.filter(tags, {id: 1})[0];
-        }
-
-        it('returns post_count with include post_count', function (done) {
-            TagAPI.read({context: {user: 1}, include: 'post_count', slug: 'kitchen-sink'}).then(function (results) {
+        it('returns count.posts with include count.posts', function (done) {
+            TagAPI.read({context: {user: 1}, include: 'count.posts', slug: 'kitchen-sink'}).then(function (results) {
                 should.exist(results);
                 should.exist(results.tags);
                 results.tags.length.should.be.above(0);
 
-                testUtils.API.checkResponse(results.tags[0], 'tag', 'post_count');
-                should.exist(results.tags[0].post_count);
-                results.tags[0].post_count.should.equal(2);
+                testUtils.API.checkResponse(results.tags[0], 'tag', 'count');
+                should.exist(results.tags[0].count.posts);
+                results.tags[0].count.posts.should.equal(2);
 
                 done();
             }).catch(done);
@@ -286,7 +376,7 @@ describe('Tags API', function () {
                 should.exist(results.tags);
                 results.tags.length.should.be.above(0);
 
-                var firstTag = extractFirstTag(results.tags);
+                var firstTag = _.find(results.tags, {id: testUtils.DataGenerator.Content.tags[0].id});
 
                 return TagAPI.read({context: {user: 1}, slug: firstTag.slug});
             }).then(function (found) {
